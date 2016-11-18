@@ -1,3 +1,16 @@
+This is a simple fork of the original repo that adds transparent gzip
+compression to the http responses. For now, it is only possible to
+enable compression for the whole application with the following code:
+
+``` go
+app.EnableCompression()
+```
+
+Compression is used only in case the client supports it.
+
+Below, I left the original README, with a couple of changes to document
+the use of gzip compression.
+
 # Ripple, a REST API framework for Go #
 
 Ripple is a simple, yet flexible, REST API framework for the Go language (golang).
@@ -35,6 +48,10 @@ func main() {
 	// Build the REST application
 	
 	app := ripple.NewApplication()
+
+    // Enable gzip compression of the responses
+
+    app.EnableCompression()
 	
 	// Create a controller and register it. Any number of controllers
 	// can be registered that way.
@@ -108,7 +125,7 @@ func (this *UserController) Get(ctx *ripple.Context) {
 }
 ```
 
-In the above code, `ctx.Params["id"]` is used to retrieve the user ID, the response is provided by setting `ctx.Response.Body`. The body will automatically be serialized to JSON.
+In the above code, `ctx.Params["id"]` is used to retrieve the user ID, the response is provided by setting `ctx.Response.Body`. The body will automatically be serialized to JSON and compressed if gzip compression is enabled.
 
 To handle the POST method, you would write something like this:
 
