@@ -1,6 +1,8 @@
 package ripple
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -32,11 +34,12 @@ func NewContext() *Context {
 
 // A Ripple application. Use NewApplication() to build it.
 type Application struct {
-	controllers map[string]interface{}
-	routes      []Route
-	contentType string
-	baseUrl     string
-	parsedBaseUrl *url.URL
+	controllers        map[string]interface{}
+	routes             []Route
+	contentType        string
+	baseUrl            string
+	parsedBaseUrl      *url.URL
+	compressionEnabled bool
 }
 
 // Build a new application object.
@@ -101,6 +104,14 @@ func (this *Application) SetBaseUrl(v string) {
 	}
 }
 
+func (this *Application) EnableCompression() {
+	this.compressionEnabled = true
+}
+
+func (this *Application) DisableCompression() {
+	this.compressionEnabled = false
+}
+
 // Returns the base URL.
 func (this *Application) BaseUrl() string {
 	return this.baseUrl
@@ -117,7 +128,7 @@ func (this *Application) prepareServeHttpResponseData(context *Context) serveHtt
 		statusCode = context.Response.Status
 	}
 	if context != nil {
-		body, err = this.serializeResponseBody(context.Response.Body)
+		body, err = this.serializeResponseBody(context)
 		if err != nil {
 			statusCode = http.StatusInternalServerError
 		}
@@ -130,15 +141,24 @@ func (this *Application) prepareServeHttpResponseData(context *Context) serveHtt
 }
 
 // Serves an HTTP request - implementation of net.http.ServeHTTP
-func (this *Application) ServeHTTP(writter http.ResponseWriter, request *http.Request) {
+func (this *Application) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	context := this.Dispatch(request)
 	r := this.prepareServeHttpResponseData(context)
-	writter.Header().Set("Content-Type", this.contentType)
-	writter.WriteHeader(r.Status)
-	writter.Write([]byte(r.Body))
+	writer.Header().Set("Content-Type", this.contentType)
+
+	supportedEncodings := request.Header.Get("Accept-Encoding")
+	gzipSupported := strings.Contains(supportedEncodings, "gzip")
+	if this.compressionEnabled && gzipSupported {
+		writer.Header().Set("Content-Encoding", "gzip")
+	}
+
+	writer.WriteHeader(r.Status)
+	writer.Write([]byte(r.Body))
 }
 
-func (this *Application) serializeResponseBody(body interface{}) (string, error) {
+func (this *Application) serializeResponseBody(context *Context) (string, error) {
+	body := context.Response.Body
+
 	if body == nil {
 		return "", nil
 	}
@@ -174,13 +194,13 @@ func (this *Application) serializeResponseBody(body interface{}) (string, error)
 		}
 
 	default:
-		
+
 		contentType := this.contentType
 		if contentType != "application/json" { // Currently, only JSON is supported
 			log.Printf("Unsupported content type: %s! Defaulting to application/json.", this.contentType)
 			contentType = "application/json"
 		}
-		
+
 		if contentType == "application/json" {
 			var b []byte
 			b, err = json.Marshal(body)
@@ -189,7 +209,29 @@ func (this *Application) serializeResponseBody(body interface{}) (string, error)
 
 	}
 
+	if this.compressionEnabled {
+		output = this.compressResponseBody(context, output)
+	}
+
 	return output, err
+}
+
+func (this *Application) compressResponseBody(context *Context, uncompressed string) string {
+	requestHeader := context.Request.Header
+
+	// Check if the client supports gzip compression, if not
+	// return uncompressed output
+	if !strings.Contains(requestHeader.Get("Accept-Encoding"), "gzip") {
+		return uncompressed
+	}
+
+	buffer := new(bytes.Buffer)
+	gzipWriter := gzip.NewWriter(buffer)
+	gzipWriter.Write([]byte(uncompressed))
+	// This is necessary to flush the output
+	gzipWriter.Close()
+
+	return buffer.String()
 }
 
 func (this *Application) checkRoute(route Route) {
@@ -251,11 +293,11 @@ type MatchRequestResult struct {
 func (this *Application) matchRequest(request *http.Request) MatchRequestResult {
 	var output MatchRequestResult
 	output.Success = false
-		
+
 	path := request.URL.Path
 	path = path[len(this.parsedBaseUrl.Path):len(path)]
 	pathTokens := splitPath(path)
-	
+
 	for routeIndex := 0; routeIndex < len(this.routes); routeIndex++ {
 		route := this.routes[routeIndex]
 		patternTokens := splitPath(route.Pattern)
