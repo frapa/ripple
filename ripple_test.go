@@ -219,10 +219,12 @@ func TestSerializeResponseBody(t *testing.T) {
 		{map[string]StructTest{"one": {"123"}}, "{\"one\":{\"Something\":\"123\"}}", true},
 	}
 
+	c := NewContext()
 	app := NewApplication()
 
 	for _, d := range serializeTests {
-		s, err := app.serializeResponseBody(d.input)
+		c.Response.Body = d.input
+		s, err := app.serializeResponseBody(c)
 		if err == nil && !d.success {
 			t.Errorf("Serialization should have failed.")
 		}
@@ -244,7 +246,7 @@ func TestContextIsFullyInitialized(t *testing.T) {
 		if recover() != nil {
 			t.Errorf("Context params not initialized.")
 		}
-	}() 
+	}()
 	ctx.Params["id"] = "123"
 }
 
@@ -290,12 +292,12 @@ func TestBaseUrl(t *testing.T) {
 		{"/api/", "/api/testers/123", true, "testers", ""},
 		{"/api/", "/api/testers/123/tasks", true, "testers", "tasks"},
 	}
-	
+
 	app := NewApplication()
 	app.RegisterController("testers", &ControllerTesters{})
 	app.AddRoute(Route{Pattern: ":_controller/:id"})
 	app.AddRoute(Route{Pattern: ":_controller/:id/:_action"})
-	
+
 	for _, d := range matchRequestTests {
 		var reader io.Reader
 		app.SetBaseUrl(d.baseUrl)

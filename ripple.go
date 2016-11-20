@@ -32,6 +32,14 @@ func NewContext() *Context {
 	return output
 }
 
+func (this *Context) GetQuery() url.Values {
+	return this.Request.URL.Query()
+}
+
+func (this *Context) GetQueryParam(param string) string {
+	return this.Request.URL.Query().Get(param)
+}
+
 // A Ripple application. Use NewApplication() to build it.
 type Application struct {
 	controllers        map[string]interface{}
@@ -144,7 +152,8 @@ func (this *Application) prepareServeHttpResponseData(context *Context) serveHtt
 func (this *Application) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	context := this.Dispatch(request)
 	r := this.prepareServeHttpResponseData(context)
-	writer.Header().Set("Content-Type", this.contentType)
+	// Added basic support of UTF-8 encoding. This is hackish!
+	writer.Header().Set("Content-Type", this.contentType+"; charset=UTF-8")
 
 	supportedEncodings := request.Header.Get("Accept-Encoding")
 	gzipSupported := strings.Contains(supportedEncodings, "gzip")
